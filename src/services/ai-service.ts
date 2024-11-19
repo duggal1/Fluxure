@@ -49,10 +49,9 @@ export class AIService {
     } catch (error) {
       console.error('Error in AI analysis:', error);
       if (this.fallbackEnabled) {
-        console.log('Using fallback response mechanism');
         return this.generateFallbackResponse();
       }
-      throw new Error('Failed to analyze data: Backend service unavailable');
+      throw error;
     }
   }
 

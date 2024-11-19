@@ -28,17 +28,27 @@ export class EnterpriseAgent {
   private sentimentAnalyzer: SentimentAnalyzer;
   private aiService: AIService;
 
-  constructor(context: BusinessContext) {
-    this.context = context;
+  constructor(deps: {
+    context: BusinessContext;
+    genAI: GoogleGenerativeAI;
+    model: any;
+    knowledgeGraph: KnowledgeGraph;
+    riskAnalyzer: RiskAnalyzer;
+    workflowOrchestrator: WorkflowOrchestrator;
+    marketPulse: MarketPulseAnalyzer;
+    sentimentAnalyzer: SentimentAnalyzer;
+    aiService: AIService;
+  }) {
+    this.context = deps.context;
+    this.genAI = deps.genAI;
+    this.model = deps.model;
+    this.knowledgeGraph = deps.knowledgeGraph;
+    this.riskAnalyzer = deps.riskAnalyzer;
+    this.workflowOrchestrator = deps.workflowOrchestrator;
+    this.marketPulse = deps.marketPulse;
+    this.sentimentAnalyzer = deps.sentimentAnalyzer;
+    this.aiService = deps.aiService;
     this.memory = this.initializeMemory();
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
-    this.aiService = new AIService();
-    this.knowledgeGraph = new KnowledgeGraph();
-    this.riskAnalyzer = new RiskAnalyzer();
-    this.workflowOrchestrator = new WorkflowOrchestrator();
-    this.marketPulse = new MarketPulseAnalyzer();
-    this.sentimentAnalyzer = new SentimentAnalyzer();
   }
 
   private initializeMemory(): AgentMemory {
@@ -227,11 +237,17 @@ export class EnterpriseAgent {
 
   private parseWorkflowActions(actionsText: string, mlActions: any): WorkflowAction[] {
     try {
-      const parsedActions = JSON.parse(actionsText);
-      return parsedActions.map((action: any) => ({
-        ...action,
-        mlConfidence: this.findMatchingMLAction(action, mlActions.predictions)?.confidence || 0
-      }));
+      // First try to parse as JSON
+      try {
+        const parsedActions = JSON.parse(actionsText);
+        return parsedActions.map((action: any) => ({
+          ...action,
+          mlConfidence: this.findMatchingMLAction(action, mlActions.predictions)?.confidence || 0
+        }));
+      } catch {
+        // If JSON parsing fails, try to extract structured data from text
+        return this.extractActionsFromText(actionsText, mlActions);
+      }
     } catch (error) {
       console.error('Error parsing workflow actions:', error);
       return [];
@@ -370,6 +386,92 @@ export class EnterpriseAgent {
       console.error('Error parsing recommendations:', error);
       return [];
     }
+  }
+  private extractActionsFromText(text: string, mlActions: any): WorkflowAction[] {
+    try {
+      // Split text into lines and filter out empty lines
+      const lines = text.split('\n').filter(line => line.trim().length > 0);
+      
+      return lines.map((line, index) => {
+        // Try to extract type from the line
+        const typeMatch = line.match(/type:\s*(\w+)/i) || 
+                         line.match(/\[([\w-]+)\]/i) ||
+                         line.match(/^(analysis|prediction|recommendation|action|automation):/i);
+        
+        // Try to extract priority from the line
+        const priorityMatch = line.match(/priority:\s*(high|medium|low)/i) ||
+                            line.match(/\((high|medium|low)\)/i);
+        
+        // Try to extract impact metrics
+        const impactMatch = line.match(/impact:\s*({[^}]+})/i) ||
+                          line.match(/efficiency:\s*([\d.]+)/i);
+        
+        // Try to extract status from the line
+        const statusMatch = line.match(/status:\s*(pending|in_progress|completed|cancelled)/i) ||
+                           line.match(/\{(pending|in_progress|completed|cancelled)\}/i);
+
+        const status = (statusMatch?.[1] || 'pending') as "pending" | "in_progress" | "completed" | "cancelled";
+        
+        // Find matching ML action for confidence score
+        const matchingMLAction = mlActions?.predictions?.find((mla: any) => 
+          this.calculateSimilarity(mla.description, line) > 0.7
+        );
+
+        return {
+          id: `action_${Date.now()}_${index}`, // Generate unique ID
+          type: (typeMatch?.[1] || 'action').toLowerCase(),
+          description: line.replace(/^[^:]+:\s*/, '').trim(),
+          priority: (priorityMatch?.[1] || 'medium').toLowerCase(),
+          status,
+          impact: this.parseImpact(impactMatch?.[1]),
+          dependencies: [],
+          automationPotential: this.estimateAutomationPotential(line),
+          mlConfidence: matchingMLAction?.confidence || 0.5,
+          metadata: {
+            source: 'text-extraction',
+            timestamp: new Date().toISOString(),
+            rawText: line
+          }
+        };
+      });
+    } catch (error) {
+      console.error('Error extracting actions from text:', error);
+      return [];
+    }
+  }
+
+  private parseImpact(impactString?: string): { efficiency: number; risk: number; revenue: number } {
+    if (!impactString) {
+      return { efficiency: 0.5, risk: 0.5, revenue: 0.5 };
+    }
+
+    try {
+      // Try to parse as JSON first
+      const parsed = JSON.parse(impactString);
+      return {
+        efficiency: parsed.efficiency ?? 0.5,
+        risk: parsed.risk ?? 0.5,
+        revenue: parsed.revenue ?? 0.5
+      };
+    } catch {
+      // Fallback to default values
+      return { efficiency: 0.5, risk: 0.5, revenue: 0.5 };
+    }
+  }
+
+  private estimateAutomationPotential(text: string): number {
+    const automationKeywords = [
+      'automate', 'automation', 'automated', 'automatic',
+      'workflow', 'process', 'routine', 'repetitive',
+      'systematic', 'programmatic', 'scheduled'
+    ];
+
+    const words = text.toLowerCase().split(/\W+/);
+    const matchCount = automationKeywords.reduce((count, keyword) => 
+      count + (words.includes(keyword) ? 1 : 0), 0
+    );
+
+    return Math.min(matchCount / 3, 1); // Normalize to 0-1 range
   }
 
   async analyzeInput(message: string): Promise<AnalysisResponse> {

@@ -85,7 +85,14 @@ class AIEngine:
             self.sentiment_analyzer = pipeline(
                 "sentiment-analysis",
                 model="distilbert-base-uncased",
-                device=-1  # Force CPU for stability
+                device=-1
+            )
+            
+            # Using a more efficient language model
+            self.language_model = pipeline(
+                "text-generation",
+                model="TinyLlama/TinyLlama-1.1B-Chat-v1.0",  # Much smaller but still capable
+                device=-1
             )
             
             self.zero_shot_classifier = pipeline(

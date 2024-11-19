@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { EnterpriseAgent } from '@/lib/agent-core';
 
-// Initialize with business context
-const agent = new EnterpriseAgent({
+const businessContext = {
   industry: 'Technology',
   companySize: 'Enterprise',
   keyMetrics: {
@@ -16,24 +15,46 @@ const agent = new EnterpriseAgent({
   priorities: ['Digital Transformation', 'Cost Optimization', 'Market Expansion'],
   competitiveContext: {},
   marketPosition: {}
-});
+};
+
+const agent = new EnterpriseAgent(businessContext);
 
 export async function POST(req: Request) {
   try {
     const { message } = await req.json();
     
-    // Process with enterprise agent
+    if (!message?.trim()) {
+      return NextResponse.json(
+        { error: 'Message cannot be empty' },
+        { status: 400 }
+      );
+    }
+
     const result = await agent.analyzeInput(message);
 
     return NextResponse.json({
-      response: result.response,
-      actions: result.actions,
-      insights: result.insights
+      response: result.response || 'Unable to generate response at this time',
+      actions: result.actions || [],
+      insights: result.insights || []
     });
   } catch (error) {
     console.error('Error in enterprise agent:', error);
+    
+    // Return a more graceful error response
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      {
+        response: 'I apologize, but I am currently experiencing technical difficulties. Please try again later.',
+        actions: [],
+        insights: [{
+          type: 'system',
+          content: 'System is temporarily unavailable',
+          priority: 'high',
+          confidence: 1,
+          impact: 1,
+          recommendations: ['Please try again in a few moments'],
+          timestamp: new Date()
+        }]
+      },
       { status: 500 }
     );
   }
