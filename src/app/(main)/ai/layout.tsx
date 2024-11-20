@@ -8,11 +8,11 @@ interface Props {
 
 const DashboardLayout = ({ children }: Props) => {
     return (
-        <div className="flex flex-col min-h-screen w-full">
+        <div className="flex flex-col w-full min-h-screen">
             <DashboardNavbar />
-            <main className="flex flex-col lg:flex-row flex-1 size-full">
+            <main className="flex lg:flex-row flex-col flex-1 size-full">
                 <DashboardSidebar />
-                <div className="w-full pt-14 lg:ml-72">
+                <div className="lg:ml-72 pt-14 w-full">
                     {children}
                 </div>
             </main>

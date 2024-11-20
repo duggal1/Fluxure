@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { BusinessContext, AgentMemory, WorkflowAction, InsightType } from '@/types/agent';
+import { BusinessContext, AgentMemory, WorkflowAction, InsightType, WorkflowStatus, PriorityLevel, WorkflowActionType } from '@/types/agent';
 import { KnowledgeGraph } from './knowledge-graph';
 import { RiskAnalyzer } from './risk-analyzer';
 import { WorkflowOrchestrator } from './workflow-orchestrator';
@@ -7,6 +7,7 @@ import { MarketPulseAnalyzer } from './market-pulse';
 import { SentimentAnalyzer } from './sentiment-analyzer';
 import { RiskAssessment } from '@/types/risk';
 import { AIService } from '@/services/ai-service';
+import { MarketAnalysis, Insight } from '@/types/ai-service';
 
 interface AnalysisResponse {
   response: string;
@@ -66,47 +67,84 @@ export class EnterpriseAgent {
     }
 
     try {
+      console.log('Sending analysis request for prompt:', prompt);
+      
       const pythonAnalysis = await this.aiService.analyzeData({
-        context: this.context,
+        context: {
+          ...this.context,
+          currentInput: prompt
+        },
         data: [{
           type: 'analysis',
           content: prompt,
           parameters: {
             useML: true,
             includeSentiment: true,
-            includeRisks: true
+            includeRisks: true,
+            includeMarketAnalysis: true,
+            includeTrends: true
           }
         }],
         parameters: {
-          useML: true,
-          includeSentiment: true,
-          includeRisks: true
+          format: 'detailed',
+          returnFullContext: true
         }
       });
 
-      if (!pythonAnalysis || typeof pythonAnalysis !== 'object') {
-        throw new Error('Invalid response from ML analysis');
-      }
+      console.log('Python analysis response:', pythonAnalysis);
 
-      const geminiResult = await this.model.generateContent(
-        this.enrichPromptWithMLInsights(prompt, pythonAnalysis)
-      );
+      // Format the analysis results with proper null checking
+      const analysisText = `
+        **Analysis Results**
+        
+        **Market Analysis**
+        ${this.formatMarketAnalysis(pythonAnalysis.market_analysis)}
+        
+        **Recommendations**
+        ${this.formatRecommendations(pythonAnalysis.recommendations)}
+        
+        **Insights**
+        ${this.formatInsights(pythonAnalysis.insights)}
+        
+        Confidence Score: ${pythonAnalysis.confidence_score.toFixed(2)}
+        Semantic Relevance: ${pythonAnalysis.semantic_relevance.toFixed(2)}
+      `;
 
-      if (!geminiResult?.response?.text) {
-        throw new Error('Invalid response from Gemini analysis');
-      }
-
-      return this.combineAnalysisResults(
-        geminiResult.response.text(),
-        pythonAnalysis
-      );
-    } catch (error: unknown) {
+      return analysisText;
+    } catch (error) {
       console.error('Error in complex analysis:', error);
-      if (error instanceof Error) {
-        throw new Error(`Failed to perform complex analysis: ${error.message}`);
-      }
-      throw new Error('Failed to perform complex analysis: Unknown error');
+      throw error;
     }
+  }
+
+  private formatMarketAnalysis(marketAnalysis: MarketAnalysis): string {
+    if (!marketAnalysis) return 'No market analysis available';
+    
+    return `
+      Trends:
+      ${marketAnalysis.trends.map(trend => `- ${trend}`).join('\n')}
+      
+      Opportunities:
+      ${marketAnalysis.opportunities.map(opp => `- ${opp}`).join('\n')}
+      
+      Risks:
+      ${marketAnalysis.risks.map(risk => `- ${risk}`).join('\n')}
+      
+      Market Sentiment: ${marketAnalysis.sentiment.toFixed(2)}
+      Analysis Confidence: ${marketAnalysis.confidence.toFixed(2)}
+    `;
+  }
+
+  private formatRecommendations(recommendations: string[]): string {
+    if (!recommendations?.length) return 'No recommendations available';
+    return recommendations.map(rec => `- ${rec}`).join('\n');
+  }
+
+  private formatInsights(insights: Insight[]): string {
+    if (!insights?.length) return 'No insights available';
+    return insights.map(insight => 
+      `- ${insight.content} (Type: ${insight.type}, Confidence: ${insight.confidence.toFixed(2)}, Priority: ${insight.priority})`
+    ).join('\n');
   }
 
   private enrichPromptWithMLInsights(
@@ -240,10 +278,38 @@ export class EnterpriseAgent {
       // First try to parse as JSON
       try {
         const parsedActions = JSON.parse(actionsText);
-        return parsedActions.map((action: any) => ({
-          ...action,
-          mlConfidence: this.findMatchingMLAction(action, mlActions.predictions)?.confidence || 0
-        }));
+        return parsedActions.map((action: any) => {
+          // Ensure type is valid
+          const type: WorkflowActionType = 
+            ['analysis', 'prediction', 'recommendation', 'action', 'automation'].includes(action.type) 
+              ? action.type 
+              : 'action';
+              
+          // Ensure priority is valid
+          const priority: PriorityLevel = 
+            ['high', 'medium', 'low'].includes(action.priority) 
+              ? action.priority 
+              : 'medium';
+              
+          // Ensure status is valid
+          const status: WorkflowStatus = 
+            ['pending', 'in_progress', 'completed', 'cancelled'].includes(action.status) 
+              ? action.status 
+              : 'pending';
+
+          return {
+            ...action,
+            type,
+            priority,
+            status,
+            mlConfidence: this.findMatchingMLAction(action, mlActions.predictions)?.confidence || 0,
+            metadata: {
+              ...action.metadata,
+              source: action.metadata?.source || 'json-parsing',
+              timestamp: action.metadata?.timestamp || new Date().toISOString()
+            }
+          } as WorkflowAction;
+        });
       } catch {
         // If JSON parsing fails, try to extract structured data from text
         return this.extractActionsFromText(actionsText, mlActions);
@@ -389,7 +455,6 @@ export class EnterpriseAgent {
   }
   private extractActionsFromText(text: string, mlActions: any): WorkflowAction[] {
     try {
-      // Split text into lines and filter out empty lines
       const lines = text.split('\n').filter(line => line.trim().length > 0);
       
       return lines.map((line, index) => {
@@ -398,9 +463,19 @@ export class EnterpriseAgent {
                          line.match(/\[([\w-]+)\]/i) ||
                          line.match(/^(analysis|prediction|recommendation|action|automation):/i);
         
+        // Ensure type is one of the allowed values
+        const extractedType = (typeMatch?.[1] || 'action').toLowerCase();
+        const type: WorkflowActionType = 
+          ['analysis', 'prediction', 'recommendation', 'action', 'automation'].includes(extractedType) 
+            ? extractedType as WorkflowActionType 
+            : 'action';
+        
         // Try to extract priority from the line
         const priorityMatch = line.match(/priority:\s*(high|medium|low)/i) ||
                             line.match(/\((high|medium|low)\)/i);
+        
+        const priority: PriorityLevel = 
+          (priorityMatch?.[1]?.toLowerCase() || 'medium') as PriorityLevel;
         
         // Try to extract impact metrics
         const impactMatch = line.match(/impact:\s*({[^}]+})/i) ||
@@ -410,18 +485,19 @@ export class EnterpriseAgent {
         const statusMatch = line.match(/status:\s*(pending|in_progress|completed|cancelled)/i) ||
                            line.match(/\{(pending|in_progress|completed|cancelled)\}/i);
 
-        const status = (statusMatch?.[1] || 'pending') as "pending" | "in_progress" | "completed" | "cancelled";
+        const status: WorkflowStatus = 
+          (statusMatch?.[1] || 'pending') as WorkflowStatus;
         
         // Find matching ML action for confidence score
         const matchingMLAction = mlActions?.predictions?.find((mla: any) => 
           this.calculateSimilarity(mla.description, line) > 0.7
         );
 
-        return {
-          id: `action_${Date.now()}_${index}`, // Generate unique ID
-          type: (typeMatch?.[1] || 'action').toLowerCase(),
+        const action: WorkflowAction = {
+          id: `action_${Date.now()}_${index}`,
+          type,
           description: line.replace(/^[^:]+:\s*/, '').trim(),
-          priority: (priorityMatch?.[1] || 'medium').toLowerCase(),
+          priority,
           status,
           impact: this.parseImpact(impactMatch?.[1]),
           dependencies: [],
@@ -433,6 +509,8 @@ export class EnterpriseAgent {
             rawText: line
           }
         };
+
+        return action;
       });
     } catch (error) {
       console.error('Error extracting actions from text:', error);

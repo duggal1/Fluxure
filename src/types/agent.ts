@@ -10,8 +10,9 @@ export interface BusinessContext {
     riskScore: number;
   };
   priorities: string[];
-  competitiveContext: any;
-  marketPosition: any;
+  competitiveContext: Record<string, any>;
+  marketPosition: Record<string, any>;
+  currentInput?: string;
 }
 
 export interface AgentMemory {
@@ -47,12 +48,16 @@ export interface InsightType {
   timestamp: Date;
 }
 
+export type WorkflowActionType = "analysis" | "prediction" | "recommendation" | "action" | "automation";
+export type WorkflowStatus = "pending" | "in_progress" | "completed" | "cancelled";
+export type PriorityLevel = "high" | "medium" | "low";
+
 export interface WorkflowAction {
   id: string;
-  type: 'analysis' | 'prediction' | 'recommendation' | 'action' | 'automation';
-  status: 'pending' | 'in-progress' | 'completed' | 'failed';
-  priority: 'critical' | 'high' | 'medium' | 'low';
+  type: WorkflowActionType;
   description: string;
+  priority: PriorityLevel;
+  status: WorkflowStatus;
   impact: {
     efficiency: number;
     risk: number;
@@ -60,5 +65,10 @@ export interface WorkflowAction {
   };
   dependencies: string[];
   automationPotential: number;
-  result?: any;
+  mlConfidence: number;
+  metadata: {
+    source: string;
+    timestamp: string;
+    rawText?: string;
+  };
 }

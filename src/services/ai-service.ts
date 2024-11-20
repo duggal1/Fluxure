@@ -1,109 +1,50 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { AnalysisRequest, AnalysisResponse } from '@/types/ai-service';
-import { BusinessContext } from '@/types/agent';
 
 export class AIService {
-  private baseUrl: string = 'http://localhost:8000';
-  private fallbackEnabled: boolean = true;
+  private baseUrl: string;
+  private timeout: number;
+  private fallbackEnabled: boolean;
+  private maxRetries: number;
 
-  private generateFallbackResponse(): AnalysisResponse {
-    return {
-      predictions: [{
-        type: 'fallback',
-        description: 'Using fallback response due to backend service unavailability',
-        confidence: 0.5
-      }],
-      insights: [{
-        type: 'system',
-        description: 'Backend service is currently unavailable',
-        confidence: 1.0,
-        impact: 0.5
-      }],
-      sentiment: {
-        overall_sentiment: 0,
-        aspects: []
-      },
-      risks: {
-        overall_risk: 0.5,
-        factors: []
-      },
-      confidence: 0.5,
-      confidence_score: 0.5,
-      metrics: {}
-    };
+  constructor() {
+    this.baseUrl = 'http://127.0.0.1:8000';
+    this.timeout = 15000;
+    this.fallbackEnabled = true;
+    this.maxRetries = 3;
   }
 
   async analyzeData(request: AnalysisRequest): Promise<AnalysisResponse> {
-    try {
-      const response = await axios.post<AnalysisResponse>(
-        `${this.baseUrl}/api/analyze`,
-        request,
-        {
-          timeout: 5000,
-          headers: {
-            'Content-Type': 'application/json'
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await axios.post<AnalysisResponse>(
+          `${this.baseUrl}/api/analyze`,
+          request,
+          {
+            timeout: this.timeout,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            proxy: false,
+            validateStatus: (status) => status === 200
           }
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error in AI analysis:', error);
-      if (this.fallbackEnabled) {
-        return this.generateFallbackResponse();
-      }
-      throw error;
-    }
-  }
+        );
 
-  async analyzeSentiment(context: BusinessContext, text: string) {
-    try {
-      const response = await axios.post(
-        `${this.baseUrl}/api/sentiment`,
-        {
-          context,
-          data: [{ type: 'sentiment', content: text }]
-        },
-        {
-          timeout: 5000
+        if (!response.data) {
+          throw new Error('Empty response from AI service');
         }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error in sentiment analysis:', error);
-      if (this.fallbackEnabled) {
-        return {
-          overall_sentiment: 0,
-          aspects: [],
-          confidence: 0.5
-        };
-      }
-      throw new Error('Failed to analyze sentiment: Backend service unavailable');
-    }
-  }
 
-  async analyzeRisks(context: BusinessContext, data: any) {
-    try {
-      const response = await axios.post(
-        `${this.baseUrl}/api/risks`,
-        {
-          context,
-          data: [{ type: 'risks', content: data }]
-        },
-        {
-          timeout: 5000
+        return response.data;
+      } catch (error: any) {
+        console.error(`Attempt ${attempt} failed:`, error.message);
+        if (attempt < this.maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          continue;
         }
-      );
-      return response.data;
-    } catch (error) {
-      console.error('Error in risk analysis:', error);
-      if (this.fallbackEnabled) {
-        return {
-          overall_risk: 0.5,
-          risk_factors: [],
-          confidence: 0.5
-        };
+        throw error;
       }
-      throw new Error('Failed to analyze risks: Backend service unavailable');
     }
+    throw new Error('All attempts failed');
   }
 }

@@ -17,34 +17,53 @@ export interface AnalysisRequest {
     };
   }
   
-  export interface AnalysisResponse {
-    metrics: {};
+  export interface MarketAnalysis {
+    trends: string[];
+    opportunities: string[];
+    risks: string[];
+    sentiment: number;
     confidence: number;
+  }
+  
+  export interface Insight {
+    content: string;
+    type: 'market' | 'risk' | 'operational' | 'strategic' | 'technical';
+    confidence: number;
+    impact: number;
+    priority: 'high' | 'medium' | 'low';
+    timestamp: string;
+    source: string;
+  }
+  
+  export interface AnalysisResponse {
+    confidence: number;
+    market_analysis: MarketAnalysis;
+    recommendations: string[];
+    insights: Insight[];
+    confidence_score: number;
+    semantic_relevance: number;
     predictions: Array<{
       type: string;
       description: string;
       confidence: number;
+      label?: string;
     }>;
-    insights: Array<{
-      type: string;
-      description: string;
-      confidence: number;
-      impact: number;
-    }>;
-    sentiment: {
+    sentiment?: {
       overall_sentiment: number;
       aspects: Array<{
         topic: string;
-        score: number;
+        sentiment: number;
+        confidence: number;
       }>;
     };
-    risks: {
+    risks?: {
       overall_risk: number;
       factors: Array<{
         category: string;
         severity: number;
         probability: number;
+        description?: string;
       }>;
     };
-    confidence_score: number;
+    metrics?: Record<string, any>;
   }

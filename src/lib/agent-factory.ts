@@ -9,10 +9,11 @@ import { AIService } from '@/services/ai-service';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export function createEnterpriseAgent(context: BusinessContext): EnterpriseAgent {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY|| '');
+  const aiService = new AIService();
+  const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '');
   const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-  return new EnterpriseAgent({
+  const deps = {
     context,
     genAI,
     model,
@@ -21,6 +22,8 @@ export function createEnterpriseAgent(context: BusinessContext): EnterpriseAgent
     workflowOrchestrator: new WorkflowOrchestrator(),
     marketPulse: new MarketPulseAnalyzer(),
     sentimentAnalyzer: new SentimentAnalyzer(),
-    aiService: new AIService()
-  });
+    aiService
+  };
+
+  return new EnterpriseAgent(deps);
 }
