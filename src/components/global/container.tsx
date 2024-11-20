@@ -1,9 +1,9 @@
 "use client";
 
 import { cn } from "@/functions";
-import { motion } from "framer-motion";
+import { motion, MotionProps } from "framer-motion";
 
-interface Props {
+interface Props extends MotionProps {
     className?: string;
     children: React.ReactNode;
     delay?: number;
@@ -11,7 +11,7 @@ interface Props {
     simple?: boolean;
 }
 
-const Container = ({ children, className, delay = 0.2, reverse, simple }: Props) => {
+const Container = ({ children, className, delay = 0.2, reverse, simple, ...motionProps }: Props) => {
     return (
         <motion.div
             className={cn("w-full h-full", className)}
@@ -19,6 +19,7 @@ const Container = ({ children, className, delay = 0.2, reverse, simple }: Props)
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: false }}
             transition={{ delay: delay, duration: simple ? 0.2 : 0.4, type: simple ? "keyframes" : "spring", stiffness: simple && 100 }}
+            {...motionProps}
         >
             {children}
         </motion.div>

@@ -33,7 +33,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.2.0",
-    "framer-motion": "^11.3.28",
+    "framer-motion": "^11.11.17",
     "hamburger-react": "^2.5.1",
     "input-otp": "^1.2.4",
     "lucide-react": "^0.428.0",

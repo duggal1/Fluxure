@@ -7,7 +7,15 @@ import { MarketPulseAnalyzer } from './market-pulse';
 import { SentimentAnalyzer } from './sentiment-analyzer';
 import { RiskAssessment } from '@/types/risk';
 import { AIService } from '@/services/ai-service';
-import { MarketAnalysis, Insight } from '@/types/ai-service';
+import { 
+  AnalysisType,
+  InsightType as AIInsightType,
+  // Remove duplicate PriorityLevel since it's already imported above
+  AnalysisRequest,
+  Insight,
+  MarketAnalysis,
+  AnalysisResponse as AIAnalysisResponse
+} from '@/types/ai-service';
 
 interface AnalysisResponse {
   response: string;
@@ -62,20 +70,14 @@ export class EnterpriseAgent {
   }
 
   private async performComplexAnalysis(prompt: string): Promise<string> {
-    if (!prompt?.trim()) {
-      throw new Error('Invalid input: prompt cannot be empty');
-    }
-
     try {
-      console.log('Sending analysis request for prompt:', prompt);
-      
-      const pythonAnalysis = await this.aiService.analyzeData({
+      const request: AnalysisRequest = {
         context: {
           ...this.context,
           currentInput: prompt
         },
         data: [{
-          type: 'analysis',
+          type: 'analysis' as AnalysisType,
           content: prompt,
           parameters: {
             useML: true,
@@ -89,32 +91,34 @@ export class EnterpriseAgent {
           format: 'detailed',
           returnFullContext: true
         }
-      });
+      };
 
+      const pythonAnalysis = await this.aiService.analyzeData(request);
       console.log('Python analysis response:', pythonAnalysis);
 
-      // Format the analysis results with proper null checking
-      const analysisText = `
-        **Analysis Results**
-        
-        **Market Analysis**
-        ${this.formatMarketAnalysis(pythonAnalysis.market_analysis)}
-        
-        **Recommendations**
-        ${this.formatRecommendations(pythonAnalysis.recommendations)}
-        
-        **Insights**
-        ${this.formatInsights(pythonAnalysis.insights)}
-        
-        Confidence Score: ${pythonAnalysis.confidence_score.toFixed(2)}
-        Semantic Relevance: ${pythonAnalysis.semantic_relevance.toFixed(2)}
-      `;
-
-      return analysisText;
+      return this.formatAnalysisResults(pythonAnalysis);
     } catch (error) {
       console.error('Error in complex analysis:', error);
       throw error;
     }
+  }
+
+  private formatAnalysisResults(analysis: AIAnalysisResponse): string {
+    return `
+      **Analysis Results**
+      
+      **Market Analysis**
+      ${this.formatMarketAnalysis(analysis.market_analysis)}
+      
+      **Recommendations**
+      ${this.formatRecommendations(analysis.recommendations)}
+      
+      **Insights**
+      ${this.formatInsights(analysis.insights)}
+      
+      Confidence Score: ${analysis.confidence_score.toFixed(2)}
+      Semantic Relevance: ${analysis.semantic_relevance.toFixed(2)}
+    `;
   }
 
   private formatMarketAnalysis(marketAnalysis: MarketAnalysis): string {
@@ -195,63 +199,125 @@ export class EnterpriseAgent {
     return insights.join('\n');
   }
 
-  private async generateWorkflowActions(analysis: string): Promise<WorkflowAction[]> {
+  private async generateWorkflowActions(input: string): Promise<WorkflowAction[]> {
     try {
-      const mlActions = await this.aiService.analyzeData({
+      const request: AnalysisRequest = {
         context: this.context,
         data: [{
-          type: 'workflow',
-          content: analysis,
+          type: 'insights' as AnalysisType,
+          content: input,
           parameters: {
-            actionTypes: ['analysis', 'prediction', 'recommendation', 'action', 'automation'],
-            includeMetrics: true
+            useML: true,
+            includeSentiment: true,
+            includeRisks: true,
+            includeMarketAnalysis: true,
+            includeTrends: true,
+            workflowAnalysis: true,
+            analysisType: 'workflow'
           }
         }],
-        parameters: { 
-          actionTypes: ['analysis', 'prediction', 'recommendation', 'action', 'automation'],
-          includeMetrics: true
+        parameters: {
+          format: 'detailed',
+          returnFullContext: true,
+          includeWorkflows: true,
+          analysisType: 'workflow'
         }
-      });
+      };
 
-      const prompt = `
-        Based on the following analysis and ML-generated actions, refine and prioritize workflow actions:
-        
-        Analysis: ${analysis}
-        ML Suggestions: ${JSON.stringify(mlActions.predictions)}
-        
-        For each action, provide:
-        1. Type (analysis/prediction/recommendation/action/automation)
-        2. Priority level
-        3. Expected impact on efficiency, risk, and revenue
-        4. Dependencies
-        5. Automation potential (0-1)
-      `;
-
-      const result = await this.model.generateContent(prompt);
-      return this.parseWorkflowActions(result.response.text(), mlActions);
+      const response = await this.aiService.analyzeData(request);
+      return this.transformToWorkflowActions(response);
     } catch (error) {
       console.error('Error generating workflow actions:', error);
-      throw error;
+      return [];
+    }
+  }
+
+  private transformToWorkflowActions(response: AIAnalysisResponse): WorkflowAction[] {
+    try {
+      const actions: WorkflowAction[] = [];
+      
+      if (response.market_analysis) {
+        actions.push({
+          id: `market_${Date.now()}`,
+          type: 'MARKET_ANALYSIS' as WorkflowActionType,
+          description: `Analyze market trends: ${response.market_analysis.trends.join(', ')}`,
+          priority: 'high' as PriorityLevel,
+          status: 'pending' as WorkflowStatus,
+          dependencies: [],
+          automationPotential: 0.7,
+          mlConfidence: response.market_analysis.confidence || 0.8,
+          metadata: {
+            source: 'market_analysis',
+            timestamp: new Date().toISOString(),
+            confidence: response.market_analysis.confidence,
+            sentiment: response.market_analysis.sentiment
+          }
+        });
+      }
+
+      response.recommendations?.forEach((rec, index) => {
+        actions.push({
+          id: `rec_${Date.now()}_${index}`,
+          type: 'RECOMMENDATION' as WorkflowActionType,
+          description: rec,
+          priority: 'medium' as PriorityLevel,
+          status: 'pending' as WorkflowStatus,
+          dependencies: [],
+          automationPotential: 0.5,
+          mlConfidence: response.confidence_score || 0.8,
+          metadata: {
+            source: 'recommendations',
+            timestamp: new Date().toISOString(),
+            confidence: response.confidence_score
+          }
+        });
+      });
+
+      if (response.risks && response.risks.overall_risk > 0.5) {
+        actions.push({
+          id: `risk_${Date.now()}`,
+          type: 'RISK_MITIGATION' as WorkflowActionType,
+          description: 'Address identified risks and develop mitigation strategies',
+          priority: 'high' as PriorityLevel,
+          status: 'pending' as WorkflowStatus,
+          dependencies: [],
+          automationPotential: 0.3,
+          mlConfidence: response.confidence_score || 0.8,
+          metadata: {
+            source: 'risk_analysis',
+            timestamp: new Date().toISOString(),
+            riskScore: response.risks.overall_risk,
+            factors: response.risks.factors
+          }
+        });
+      }
+
+      return actions;
+    } catch (error) {
+      console.error('Error transforming response to workflow actions:', error);
+      return [];
     }
   }
 
   private async extractInsights(analysis: string): Promise<InsightType[]> {
     try {
-      const mlInsights = await this.aiService.analyzeData({
+      const request: AnalysisRequest = {
         context: this.context,
         data: [{
-          type: 'insights',
+          type: 'insights' as AnalysisType,
           content: analysis,
           parameters: {
             insightTypes: ['strategic', 'operational', 'risk', 'market', 'efficiency'],
             includeConfidenceScores: true
           }
         }],
-        parameters: { 
+        parameters: {
           insightTypes: ['strategic', 'operational', 'risk', 'market', 'efficiency'],
           includeConfidenceScores: true
         }
-      });
+      };
+
+      const mlInsights = await this.aiService.analyzeData(request);
 
       const prompt = `
         Analyze these ML-generated insights and provide additional business context:
@@ -399,31 +465,38 @@ export class EnterpriseAgent {
 
   private parseInsights(insightsText: string, mlInsights: any): InsightType[] {
     try {
+      if (insightsText.includes('**')) {
+        const insight: InsightType = {
+          type: 'market',
+          content: insightsText,
+          confidence: 0.85,
+          priority: 'high' as PriorityLevel,
+          timestamp: new Date().toISOString(),
+          source: 'analysis'
+        };
+        return [insight];
+      }
+      
       const parsedInsights = JSON.parse(insightsText);
-      return parsedInsights.map((insight: any) => ({
-        type: insight.type,
+      return parsedInsights.map((insight: any): InsightType => ({
+        type: (insight.type as AIInsightType) || 'market',
         content: insight.content,
-        priority: insight.priority,
-        confidence: insight.confidence,
-        impact: insight.impact,
-        recommendations: insight.recommendations,
-        metadata: {
-          mlConfidence: this.findMatchingMLInsight(insight, mlInsights.insights)?.confidence || 0,
-          source: 'hybrid-analysis',
-          timestamp: new Date().toISOString()
-        }
+        confidence: insight.confidence || 0.8,
+        priority: (insight.priority as PriorityLevel) || 'medium',
+        timestamp: new Date().toISOString(),
+        source: insight.source || 'analysis'
       }));
     } catch (error) {
-      console.error('Error parsing insights:', error);
-      return [];
+      console.warn('Error parsing insights:', error);
+      return [{
+        type: 'market',
+        content: insightsText,
+        confidence: 0.8,
+        priority: 'medium' as PriorityLevel,
+        timestamp: new Date().toISOString(),
+        source: 'analysis'
+      }];
     }
-  }
-
-  private findMatchingMLInsight(insight: any, mlInsights: any[]): any {
-    return mlInsights?.find(mli => 
-      mli.type === insight.type && 
-      this.calculateSimilarity(mli.content, insight.content) > 0.7
-    );
   }
 
   private parseRecommendations(recommendationsText: string): any[] {
@@ -506,7 +579,9 @@ export class EnterpriseAgent {
           metadata: {
             source: 'text-extraction',
             timestamp: new Date().toISOString(),
-            rawText: line
+            rawText: line,
+            confidence: matchingMLAction?.confidence,
+            riskScore: matchingMLAction?.riskScore
           }
         };
 
@@ -560,20 +635,30 @@ export class EnterpriseAgent {
     try {
       const analysis = await this.performComplexAnalysis(message);
       
+      // Execute these in parallel but handle failures independently
       const [actions, insights, mlMetrics] = await Promise.all([
-        this.generateWorkflowActions(analysis),
-        this.extractInsights(analysis),
+        this.generateWorkflowActions(message).catch(error => {
+          console.error('Workflow generation failed:', error);
+          return [];
+        }),
+        this.extractInsights(analysis).catch(error => {
+          console.error('Insight extraction failed:', error);
+          return [];
+        }),
         this.aiService.analyzeData({
           context: this.context,
           data: [{
-            type: 'metrics',
+            type: 'metrics' as AnalysisType,
             content: message,
             parameters: {
-              analysis: analysis,
+              analysis,
               includeConfidence: true
             }
           }],
           parameters: { includeConfidence: true }
+        }).catch(error => {
+          console.error('Metrics analysis failed:', error);
+          return { metrics: {}, confidence: 0 };
         })
       ]);
 
@@ -586,7 +671,7 @@ export class EnterpriseAgent {
         mlMetrics: mlMetrics.metrics || {},
         confidence: mlMetrics.confidence || 0
       };
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Error analyzing input:', error);
       if (error instanceof Error) {
         throw new Error(`Failed to analyze input: ${error.message}`);

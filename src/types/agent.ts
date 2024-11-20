@@ -39,13 +39,13 @@ export interface AgentMemory {
 }
 
 export interface InsightType {
-  type: 'strategic' | 'operational' | 'risk' | 'market' | 'efficiency';
-  priority: 'critical' | 'high' | 'medium' | 'low';
+  type: 'market' | 'strategic' | 'operational' | 'risk' | 'efficiency';
+  content: string;
   confidence: number;
-  impact: number;
-  description: string;
-  recommendations: string[];
-  timestamp: Date;
+  priority: PriorityLevel;
+  timestamp: string;
+  source: string;
+  impact?: number;
 }
 
 export type WorkflowActionType = "analysis" | "prediction" | "recommendation" | "action" | "automation";

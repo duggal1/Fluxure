@@ -4,19 +4,16 @@ import { createEnterpriseAgent } from '@/lib/agent-factory';
 import { EnterpriseAgent } from '@/lib/agent-core';
 
 let agent: EnterpriseAgent;
-const PYTHON_SERVER_URL = process.env.PYTHON_API_URL || 'http://localhost:8000';
+const PYTHON_SERVER_URL = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://127.0.0.1:8000';
 
-async function checkServerHealth() {
+async function checkServerHealth(): Promise<boolean> {
   try {
     const response = await axios.get(`${PYTHON_SERVER_URL}/health`, {
       timeout: 5000,
-      headers: {
-        'Accept': 'application/json'
-      },
-      proxy: false
+      headers: { 'Accept': 'application/json' }
     });
     
-    return response.status === 200 && response.data?.models_initialized;
+    return response.status === 200 && response.data?.status === 'healthy';
   } catch (error) {
     console.error('Health check failed:', error);
     return false;
@@ -95,15 +92,7 @@ export async function POST(req: Request) {
     if (!agent) {
       const initialized = await initializeAgent();
       if (!initialized) {
-        return NextResponse.json(
-          { 
-            error: 'Service Unavailable',
-            message: 'AI service initialization failed. Please try again later.',
-            status: 'error',
-            timestamp: new Date().toISOString()
-          },
-          { status: 503 }
-        );
+        throw new Error('AI service initialization failed');
       }
     }
 
@@ -111,33 +100,28 @@ export async function POST(req: Request) {
     
     if (!message?.trim()) {
       return NextResponse.json(
-        { 
-          error: 'Bad Request',
-          message: 'Message cannot be empty',
-          status: 'error',
-          timestamp: new Date().toISOString()
-        },
+        { error: 'Message cannot be empty' },
         { status: 400 }
       );
     }
 
+    console.log('Sending analysis request for prompt:', message);
     const result = await agent.analyzeInput(message);
+    console.log('Python analysis response:', result);
+
     return NextResponse.json({
       data: result,
-      status: 'success',
-      timestamp: new Date().toISOString()
+      status: 'success'
     });
-    
+
   } catch (error: any) {
     console.error('Error processing request:', error);
     return NextResponse.json(
-      {
-        error: 'Internal Server Error',
-        message: error.message || 'An unexpected error occurred',
-        status: 'error',
-        timestamp: new Date().toISOString()
+      { 
+        error: error.message || 'An unexpected error occurred',
+        status: 'error'
       },
-      { status: 500 }
+      { status: error.response?.status || 500 }
     );
   }
 }
