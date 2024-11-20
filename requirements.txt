@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+transformers
+sentence-transformers
+pydantic
+psutil
+huggingface-hub
+torch
+
+   
+
+
+

@@ -18,9 +18,9 @@ export const SIDEBAR_LINKS: Link[] = [
         icon: Sparkle
     },
     {
-        href: "/dashboard/analytics",
-        label: "Analytics",
-        icon: LineChartIcon
+        href: "/ai-erp",
+        label: "Enterprise",
+        icon: UserPlusIcon,
     },
     {
         href: "/dashboard/posts",

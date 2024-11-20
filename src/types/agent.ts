@@ -52,23 +52,26 @@ export type WorkflowActionType = "analysis" | "prediction" | "recommendation" | 
 export type WorkflowStatus = "pending" | "in_progress" | "completed" | "cancelled";
 export type PriorityLevel = "high" | "medium" | "low";
 
+export interface WorkflowActionMetadata {
+  source: string;
+  timestamp: string;
+  rawText?: string;
+  confidence?: number;
+  riskScore?: number;
+  sentiment?: number;
+  factors?: any[];
+  [key: string]: any; // Allow additional properties
+}
+
 export interface WorkflowAction {
   id: string;
   type: WorkflowActionType;
   description: string;
   priority: PriorityLevel;
   status: WorkflowStatus;
-  impact: {
-    efficiency: number;
-    risk: number;
-    revenue: number;
-  };
+  impact?: any;
   dependencies: string[];
   automationPotential: number;
   mlConfidence: number;
-  metadata: {
-    source: string;
-    timestamp: string;
-    rawText?: string;
-  };
+  metadata: WorkflowActionMetadata;
 }
